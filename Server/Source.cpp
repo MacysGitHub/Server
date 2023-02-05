@@ -1,10 +1,19 @@
-#include <vector>
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/core/mat.hpp>
 #include <WS2tcpip.h>
 #include <Windows.h>
 #include <iostream>
+#include <vector>
+#include <string>
 #include <fstream>
+#include <winuser.h>
 
 #pragma comment(lib, "ws2_32.lib")
+#pragma pack(push, 1)
+
+using namespace cv;
 
 int main() {
 	WSADATA wData;
@@ -47,8 +56,7 @@ int main() {
 	ZeroMemory(host, NI_MAXHOST);
 	ZeroMemory(service, NI_MAXSERV);
 
-	char* buf = new char[(((4096 * 32 + 31) / 32) * 4) * 2160];
-	ZeroMemory(buf, (((4096 * 32 + 31) / 32) * 4) * 2160);
+
 	bool isReceiving = true;
 
 	//If client connects
@@ -62,39 +70,39 @@ int main() {
 		std::cout << "Connection could not be established." << std::endl;
 	}
 
-	//Receive the buffer
-	int success = recv(clientSocket, buf, (((4096 * 32 + 31) / 32) * 4) * 2160, 0);
+	//Receive the bitmap info header
+	bool connected = true;
+	char* buf = 0;
+
+	BITMAPINFOHEADER bmInfo;
+	char* bitmapInfo = new char[sizeof(BITMAPINFOHEADER)];
+	if (int rec = recv(clientSocket, bitmapInfo, sizeof(BITMAPINFOHEADER), NULL)) {
+		std::cout << "bytes received bitmap info " << rec << std::endl;
+		//Copy Bitmap Info Header to Bitmap Info Header Structure
+		memcpy(&bmInfo, bitmapInfo, sizeof BITMAPINFOHEADER);
+		std::cout << "Incoming width/height: " << bmInfo.biWidth << " " << bmInfo.biHeight << std::endl;
+
+	}
+	//Receive bitmap bits
+	buf = new char[((((bmInfo.biWidth * 32 + 31) / 32) * 4) * bmInfo.biHeight) + 1];
+	ZeroMemory(buf, ((((bmInfo.biWidth * 32 + 31) / 32) * 4) * bmInfo.biHeight) + 1);
+	int bitmapRec = recv(clientSocket, buf, (((((bmInfo.biWidth * 32 + 31) / 32) * 4) * bmInfo.biHeight)) + 1, NULL);
+	std::cout << "recieve bitmap bytes: " << bitmapRec << " " << WSAGetLastError() << std::endl;
+	HDC recHdc = GetDC(NULL);
+	HBITMAP hbitTest = CreateCompatibleBitmap(recHdc, bmInfo.biWidth, bmInfo.biHeight);
+
+	//Set bitmap bits from client to HBITMAP handle
+	int diSet = SetDIBits(recHdc, hbitTest, 0,
+		(UINT)bmInfo.biHeight,
+		buf,
+		(BITMAPINFO*)&bmInfo, DIB_RGB_COLORS);
+
 	std::cout << buf[0] << " " << buf[1] << std::endl;
-	//Create bitmap from received bitmap buffer
-	HBITMAP bitmap = { 0 };
-	LONG bitRet = SetBitmapBits(bitmap, (((4096 * 32 + 31) / 32) * 4) * 2160, buf); //WORKS KIND OF
-	std::cout << "Bitmap: " << bitRet;
 
-	if (success == SOCKET_ERROR)
-	{
-		std::cerr << "error: " << WSAGetLastError();
-		return WSAGetLastError();
-	}
-	else
-	{
-		std::cout << "Received data." << success << std::endl;
-		std::cout << "Processing...." << std::endl;
 
-		HBITMAP recvBitmap = {};
-
-		recvBitmap = CreateBitmap(4096, 2160, 1, 32, buf);
-		
-		if (recvBitmap == NULL)
-		{
-			std::cout << "Imvalid bitmap data" << std::endl;
-		}
-		else
-		{
-			std::cout << "Successfully Created Bitmap: " << recvBitmap << std::endl;
-			OpenClipboard(NULL);
-			EmptyClipboard();
-			SetClipboardData(CF_BITMAP, recvBitmap);
-			CloseClipboard();
-		}
-	}
+	//Create bitmap from received bitmap buffer and paste it to clipboard
+	OpenClipboard(NULL);
+	EmptyClipboard();
+	SetClipboardData(CF_BITMAP, hbitTest);
+	CloseClipboard();
 }
