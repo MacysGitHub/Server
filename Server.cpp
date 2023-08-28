@@ -11,11 +11,14 @@
 #pragma pack(push, 1)
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+int getTaskBarHeight();
 
 HBITMAP hbitTest = { 0 };
 BITMAPINFOHEADER bmInfo;
 HWND hwnd;
 char* buf = 0;
+int newWidth = 0;
+int newHeight = 0;
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
 
@@ -92,6 +95,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 	HDC recHdc = GetDC(NULL);
 	hbitTest = CreateCompatibleBitmap(recHdc, bmInfo.biWidth, bmInfo.biHeight);
 
+
+
 	// Register window class
 	WNDCLASS wc = { 0 };
 	wc.lpfnWndProc = WindowProc;
@@ -105,20 +110,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 		CW_USEDEFAULT, CW_USEDEFAULT, bmInfo.biWidth, bmInfo.biHeight, NULL, NULL, hInstance, NULL);
 
 	//Set bitmap bits from client to HBITMAP handle
-	int diSet = SetDIBits(recHdc, hbitTest, 0,
+	/*int diSet = SetDIBits(recHdc, hbitTest, 0,
 		(UINT)bmInfo.biHeight,
 		buf,
-		(BITMAPINFO*)&bmInfo, DIB_RGB_COLORS);
+		(BITMAPINFO*)&bmInfo, DIB_RGB_COLORS);*/
 
 	std::cout << buf[0] << " " << buf[1] << std::endl;
 
 	//Create bitmap from received bitmap buffer and paste it to clipboard
-	OpenClipboard(NULL);
+	/*OpenClipboard(NULL);
 	EmptyClipboard();
 	SetClipboardData(CF_BITMAP, hbitTest);
-	CloseClipboard();
-	//}
-	WSACleanup();
+	CloseClipboard();*/
+	
 
 	ShowWindow(hwnd, SW_SHOW);
 	UpdateWindow(hwnd);
@@ -146,18 +150,29 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		HBITMAP hOldBitmap = (HBITMAP)SelectObject(hdcMem, hbitTest);
 
 		// Draw the bitmap to the window
-		BitBlt(hdc, 0, 0, bmInfo.biWidth, bmInfo.biHeight, hdcMem, 0, 0, SRCCOPY);
+		//BitBlt(hdc, 0, 0, bmInfo.biWidth, bmInfo.biHeight, hdcMem, 0, 0, SRCCOPY);
+
+		//Get TaskBar height
+		int taskHeight = getTaskBarHeight();
 
 		//Set bits
-		int diSet = SetDIBits(hdc, hbitTest, 0,
-			(UINT)bmInfo.biHeight,
+		/*int diSet = SetDIBits(hdc, hbitTest, 0,
+			(UINT)bmInfo.biHeight - taskHeight,
 			buf,
-			(BITMAPINFO*)&bmInfo, DIB_RGB_COLORS);
+			(BITMAPINFO*)&bmInfo, DIB_RGB_COLORS);*/
+
+			//Get Task Bar height
+		int taskBar = getTaskBarHeight();
 
 		//Stretch image
-		/*StretchDIBits(hdc, 0, 0, bmInfo.biWidth, bmInfo.biHeight, 0, 0, bmInfo.biHeight, 
-			bmInfo.biWidth, buf, (BITMAPINFO*) & bmInfo, DIB_RGB_COLORS, SRCCOPY);*/
-
+		if (newWidth && newHeight == 0) {
+			StretchDIBits(hdc, 0, 0, bmInfo.biWidth, bmInfo.biHeight - taskBar, 0, 0, bmInfo.biWidth,
+				bmInfo.biHeight, buf, (BITMAPINFO*)&bmInfo, DIB_RGB_COLORS, SRCCOPY);
+		}
+		else {
+			StretchDIBits(hdc, 0, 0, newWidth, newHeight - taskBar, 0, 0, bmInfo.biWidth,
+				bmInfo.biHeight, buf, (BITMAPINFO*)&bmInfo, DIB_RGB_COLORS, SRCCOPY);
+		}
 		// Clean up
 		SelectObject(hdcMem, hOldBitmap);
 		DeleteDC(hdcMem);
@@ -165,15 +180,43 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		EndPaint(hwnd, &ps);
 		return 0;
 	}
+
+	case WM_SIZE:
+	{
+		// Update the bitmap size based on the new window size
+		newWidth = LOWORD(lParam);
+		newHeight = HIWORD(lParam);
+
+		// Invalidate the window to trigger a repaint
+		InvalidateRect(hwnd, NULL, TRUE);
+		UpdateWindow(hwnd);
+		return 0;
+	}
+
 	case WM_CLOSE:
 		DestroyWindow(hwnd);
+		WSACleanup();
 		return 0;
 
 	case WM_DESTROY:
+		DeleteObject(hbitTest);
 		PostQuitMessage(0);
+		WSACleanup();
 		return 0;
 	}
 
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 
+}
+
+int getTaskBarHeight()
+{
+	/*RECT rect;
+	HWND taskBar = FindWindow(L"Shell_TrayWnd", NULL);
+	if (taskBar && GetWindowRect(taskBar, &rect)) {
+		return rect.bottom - rect.top;
+	}*/
+	RECT rect;
+	SystemParametersInfo(SPI_GETWORKAREA, NULL, &rect, NULL);
+	return bmInfo.biHeight - rect.bottom;
 }
